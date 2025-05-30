@@ -1,0 +1,3 @@
+name: eks-py
+runtime: python
+description: A simple production-ready EKS cluster using Pulumi and Python
