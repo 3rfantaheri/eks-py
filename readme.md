@@ -7,6 +7,7 @@ Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, an
 - Parameterized EKS cluster, node group, and VPC
 - Optional EFS, EBS for storage
 - Optional Ingress (NGINX), and Prometheus using Helm supporting and custom values
+- Kubernetes Cluster Autoscaler
 - Secure IAM roles and OIDC for IRSA
 
 ## Usage
@@ -18,6 +19,8 @@ Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, an
 
 2. **Configure your stack**
    - Copy `Pulumi.sample.yaml` to `Pulumi.<stack>.yaml` and edit values as needed.
+
+note: if trusted_cidrs is empty, only nodes can access the API server (no direct kubectl from outside).
 
 3. **Deploy**
    ```sh
