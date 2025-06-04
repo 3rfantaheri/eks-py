@@ -2,6 +2,9 @@
 
 Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, and Prometheus using Pulumi (Python).
 
+**note:** The project is under development — known issues exist, and new features are on the roadmap. I’d love for you to give it a try and share your feedback!
+
+
 ## Features
 
 - Parameterized EKS cluster, node group, and VPC
