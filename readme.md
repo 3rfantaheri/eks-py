@@ -13,6 +13,17 @@ Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, an
 - Kubernetes Cluster Autoscaler
 - Secure IAM roles and OIDC for IRSA
 
+
+## road map
+
+- Multi-AZ Node Groups & Multiple Node Groups
+- Managed Add-ons
+- External Secrets Integration
+- Improvements in node labeling and customizations
+- Implementing bastion host or SSM Session Manager for private clusters.
+
+
+
 ## Usage
 
 1. **Install dependencies**
