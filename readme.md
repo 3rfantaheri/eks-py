@@ -8,41 +8,52 @@ Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, an
 ## Features
 
 - Parameterized EKS cluster, node group, and VPC
-- Optional EFS, EBS for storage
-- Optional Ingress (NGINX), and Prometheus using Helm supporting and custom values
 - Kubernetes Cluster Autoscaler
 - Secure IAM roles and OIDC for IRSA
+- Config‑driven multi architecture node groups (x86_64 + arm64)
+- Optional:
+  - EFS filesystem + mount targets (security‑group restricted)
+  - EBS CSI driver (Helm) with required IAM policy attachment (conditional)
+  - Ingress NGINX (customizable Helm values)
+  - Prometheus / Grafana (kube-prometheus-stack) with override values
 
 
 ## road map
 
 - Managed Add-ons
 - External Secrets Integration
-- Implementing bastion host or SSM Session Manager for private clusters.
-
+- Private cluster access patterns (bastion or SSM Session Manager)
 
 
 ## Usage
 
-1. **Install dependencies**
-   ```sh
-   pip install -r requirements.txt
-   ```
-
-2. **Configure your stack**
+1. **Configure your stack**
    - Copy `Pulumi.sample.yaml` to `Pulumi.<stack>.yaml` and edit values as needed.
-
-note: if trusted_cidrs is empty, only nodes can access the API server (no direct kubectl from outside).
 
 3. **Deploy**
    ```sh
+   pip install -r requirements.txt
+   pulumi stack init dev        # if new
+   pulumi config set aws:region us-west-2
+   cp Pulumi.sample.yaml Pulumi.dev.yaml  # adjust values
    pulumi up
    ```
 
 4. **Access outputs**
-   - Kubeconfig and resource info are exported as stack outputs.
+ - `kubeconfig` (secret) – can be written to a file:
 
+   ```sh
+   pulumi stack output kubeconfig --show-secrets > kubeconfig
+   export KUBECONFIG=$PWD/kubeconfig
+   kubectl get nodes
+   ```
 
+5. **Cleanup**
+
+    ```sh
+    pulumi destroy
+    pulumi stack rm <stack>
+   ```
 
 ## Requirements
 
