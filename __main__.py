@@ -20,11 +20,11 @@ def generate_kubeconfig(cluster, cluster_name):
                 "server": args[0],
                 "certificate-authority-data": args[1],
             },
-            "name": "kubernetes",
+            "name": args[2],
         }],
         "contexts": [{
             "context": {
-                "cluster": "kubernetes",
+                "cluster": args[2],
                 "user": "aws",
             },
             "name": "aws",
@@ -43,13 +43,14 @@ def generate_kubeconfig(cluster, cluster_name):
         }]
     }))
 
-def export_outputs(export, cluster, cluster_name, region, vpc, subnet_ids, eks_sg, node_group_sg, node_group, instance_type, desired_capacity, min_capacity, max_capacity):
-    export("kubeconfig", generate_kubeconfig(cluster, cluster_name))
-    export("cluster", {
+def export_outputs(cluster, cluster_name, region, vpc, subnet_ids, eks_sg, node_group_sg, node_group, instance_type, desired_capacity, min_capacity, max_capacity):
+    pulumi.export("kubeconfig", generate_kubeconfig(cluster, cluster_name))
+    pulumi.export("cluster", {
         "name": cluster_name,
         "arn": cluster.arn,
         "endpoint": cluster.endpoint,
         "region": region,
+        "version": cluster.version,
         "vpc_id": vpc.id,
         "vpc_cidr": vpc.cidr_block,
         "subnet_ids": subnet_ids,
@@ -67,14 +68,14 @@ def export_outputs(export, cluster, cluster_name, region, vpc, subnet_ids, eks_s
     })
 
 cfg = load_config()
-cfg["ami_id"] = get_ami(cfg["ami_id"])
+cfg["ami_id"] = get_ami(cfg["ami_id"], cfg["cluster_version"], cfg["node_architecture"])
 
 eks_role, node_group_role = create_eks_roles(cfg["cluster_name"])
-vpc, igw, route_table, subnet_ids = create_vpc(cfg["cluster_name"])
-node_group_sg, eks_sg = create_security_groups(vpc, subnet_ids, cfg["trusted_cidrs"], cfg["cluster_name"])
-lt = create_launch_template(node_group_sg, cfg["ssh_keypair_name"], cfg["ami_id"])
+vpc, igw, route_table, subnet_ids = create_vpc(cfg["cluster_name"], cfg["vpc_cidr"])
+node_group_sg, eks_sg = create_security_groups(vpc, cfg["trusted_cidrs"], cfg["cluster_name"])
+lt = create_launch_template(node_group_sg, cfg["ssh_keypair_name"], cfg["cluster_name"], cfg["ami_id"])
 cluster = create_eks_cluster(cfg, eks_role, eks_sg, subnet_ids)
-node_group = create_node_group(cfg, node_group_role, subnet_ids, lt)
+node_group = create_node_group(cfg, node_group_role, subnet_ids, lt, cluster)
 kube_provider = create_kube_provider(cluster, cfg["cluster_name"])
 
 if cfg["enable_efs"]:
@@ -88,6 +89,9 @@ if cfg["enable_prometheus"]:
 
 oidc = setup_oidc(cluster)
 setup_autoscaler(cfg, oidc, kube_provider, node_group, cfg["cluster_name"], cfg["region"])
+
+if not (cfg["public_access"] or cfg.get("private_access", True)):
+    raise Exception("At least one of public_access or private_access must be True.")
 
 export_outputs(
     cluster,

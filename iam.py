@@ -15,6 +15,7 @@ def create_eks_roles(cluster_name):
             )
         ]).json,
     )
+    # Core managed policies
     for policy in [
         "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
         "arn:aws:iam::aws:policy/AmazonEKSServicePolicy",
@@ -43,4 +44,5 @@ def create_eks_roles(cluster_name):
         aws.iam.RolePolicyAttachment(f"{node_group_role._name}-{policy.split('/')[-1]}",
             role=node_group_role.name,
             policy_arn=policy)
+
     return eks_role, node_group_role
