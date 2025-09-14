@@ -16,10 +16,8 @@ Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, an
 
 ## road map
 
-- Multi-AZ Node Groups & Multiple Node Groups
 - Managed Add-ons
 - External Secrets Integration
-- Improvements in node labeling and customizations
 - Implementing bastion host or SSM Session Manager for private clusters.
 
 
