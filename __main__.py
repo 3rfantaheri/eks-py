@@ -1,4 +1,5 @@
 import pulumi
+import pulumi_aws as aws  
 from config import load_config
 from iam import create_eks_roles
 from network import create_vpc, create_security_groups
@@ -21,6 +22,13 @@ cfg = load_config()
 base_tags = build_base_tags(cfg)
 
 eks_role, node_group_role = create_eks_roles(cfg["cluster_name"], base_tags)
+# Attach EBS CSI permissions if enabled (needed for volume provisioning)
+if cfg["enable_ebs"]:
+    aws.iam.RolePolicyAttachment(
+        "nodegroup-ebs-csi-policy",
+        role=node_group_role.name,
+        policy_arn="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy",
+    )
 
 vpc_data = create_vpc(cfg["cluster_name"], cfg["vpc_cidr"], base_tags, cfg["max_azs"])
 vpc = vpc_data["vpc"]
@@ -34,6 +42,9 @@ log_group = create_cluster_log_group(cfg, base_tags)
 
 cluster = create_eks_cluster(cfg, eks_role, eks_sg, subnet_ids, kms_key, base_tags, log_group)
 kube_provider = create_kube_provider(cluster, cfg["cluster_name"])
+
+# Create OIDC earlier so future IRSA addons can depend on it
+oidc = setup_oidc(cluster, cfg["oidc_thumbprint"])
 
 created_node_groups = []
 for ng_cfg in cfg["node_groups"]:
@@ -79,9 +90,7 @@ if cfg["enable_ingress"] and primary_node_group:
 if cfg["enable_prometheus"] and primary_node_group:
     setup_prometheus(cfg, kube_provider, primary_node_group, base_tags)
 
-oidc = setup_oidc(cluster, cfg["oidc_thumbprint"])
-if created_node_groups:
-    setup_autoscaler(cfg, oidc, kube_provider, created_node_groups, cfg["cluster_name"], cfg["region"], base_tags)
+setup_autoscaler(cfg, oidc, kube_provider, created_node_groups, cfg["cluster_name"], cfg["region"], base_tags)
 
 pulumi.export("kubeconfig", pulumi.Output.secret(kube_provider.kubeconfig))
 pulumi.export("cluster", {

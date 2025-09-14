@@ -18,6 +18,7 @@ def create_eks_roles(cluster_name: str, base_tags: dict):
     for policy in (
         "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
         "arn:aws:iam::aws:policy/AmazonEKSServicePolicy",
+        "arn:aws:iam::aws:policy/AmazonEKS_VPCResourceController",
     ):
         aws.iam.RolePolicyAttachment(
             f"eks-cluster-role-{policy.split('/')[-1]}",

@@ -80,6 +80,7 @@ def setup_autoscaler(cfg, oidc, kube_provider, node_groups, cluster_name, region
     import pulumi_kubernetes as k8s
 
     values = {
+        "cloudProvider": "aws", 
         "autoDiscovery": {"clusterName": cluster_name},
         "awsRegion": region,
         "rbac": {
