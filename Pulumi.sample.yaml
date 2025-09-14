@@ -1,15 +1,42 @@
 # Pulumi.sample.yaml
 config:
-  eks-cluster:cluster_name: "my-eks-cluster"
-  eks-cluster:public_access: True
-  eks-cluster:public_access_cidrs: ["0.0.0.0/0"]
-  eks-cluster:trusted_cidrs: ["10.100.0.0/16"]
-  eks-cluster:instance_type: "t3.medium"
-  eks-cluster:node_group_name: "eks-workers"
-  eks-cluster:ami_id: ""
-  eks-cluster:desired_capacity: 2
-  eks-cluster:min_capacity: 1
-  eks-cluster:max_capacity: 4
+  aws:region: us-west-2
+  eks-cluster:cluster_name: my-eks-cluster
+  eks-cluster:environment: dev
+  eks-cluster:public_access: true
+  eks-cluster:private_access: true
+  eks-cluster:public_access_cidrs:
+    - 0.0.0.0/0
+  eks-cluster:trusted_cidrs:
+    - 10.100.0.0/16
+  eks-cluster:vpc_cidr: 10.100.0.0/16
+  eks-cluster:max_azs: 2
+  eks-cluster:node_groups:
+    - name: general
+      instance_type: t3.medium
+      architecture: x86_64
+      ami_family: al2
+      desired_capacity: 2
+      min_capacity: 1
+      max_capacity: 4
+      subnet_azs: ["us-west-2a","us-west-2b"]  
+      labels:
+        workload: general
+    - name: batch-arm
+      instance_type: c7g.large
+      architecture: arm64
+      ami_family: al2
+      desired_capacity: 1
+      min_capacity: 1
+      max_capacity: 3
+      taints:
+        - key: workload
+          value: batch
+          effect: NoSchedule
+      subnet_azs: ["us-west-2a"]
+      labels:
+        workload: batch
+        arch: arm64
   eks-cluster:enable_efs: true
   eks-cluster:enable_ebs: true
   eks-cluster:enable_ingress: true
@@ -20,14 +47,11 @@ config:
         type: LoadBalancer
       replicaCount: 2
   eks-cluster:prometheus_stack_values:
-    prometheus:
-      service:
-        type: NodePort
     grafana:
-      adminPassword: "supersecret"
-      ingress: 
+      adminPassword: supersecret
+      ingress:
         enabled: true
-        hosts: ["http://localhost:3000"]
+        hosts: ["grafana.example.com"]
         annotations:
-              "kubernetes.io/ingress.class": "nginx"
-        path: "/" 
+          kubernetes.io/ingress.class: nginx
+        path: /

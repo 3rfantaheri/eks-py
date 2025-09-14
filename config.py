@@ -3,6 +3,7 @@ from pulumi import Config
 
 
 def load_config():
+    """Load and validate stack configuration."""
     cfg = Config("eks-cluster")
     aws_region = pulumi.Config("aws").get("region") or "us-west-2"
 
@@ -14,49 +15,68 @@ def load_config():
 
     cluster_del_prot = cfg.get_bool("cluster_deletion_protection")
     if cluster_del_prot is None:
-        cluster_del_prot = (environment == "prod")
+        cluster_del_prot = environment == "prod"
 
     efs_del_prot = cfg.get_bool("efs_deletion_protection")
     if efs_del_prot is None:
-        efs_del_prot = (environment == "prod")
+        efs_del_prot = environment == "prod"
 
-    node_groups = cfg.get_object("node_groups")
-    if not node_groups or not isinstance(node_groups, list):
-        raise Exception("'node_groups' config must be a non-empty list of node group objects.")
+    node_groups_raw = cfg.get_object("node_groups")
+    if not node_groups_raw or not isinstance(node_groups_raw, list):
+        raise Exception("'node_groups' must be a non-empty list.")
 
-    normalized = []
-    for i, ng in enumerate(node_groups):
+    seen = set()
+    node_groups = []
+    for i, ng in enumerate(node_groups_raw):
         if not isinstance(ng, dict):
             raise Exception(f"node_groups[{i}] must be an object")
         name = ng.get("name") or f"node-group-{i}"
-        instance_type = ng.get("instance_type")
-        if not instance_type:
-            raise Exception(f"node_groups[{i}] missing 'instance_type'")
+        if name in seen:
+            raise Exception(f"Duplicate node group name '{name}'")
+        seen.add(name)
+        itype = ng.get("instance_type")
+        if not itype:
+            raise Exception(f"node_groups[{i}] missing instance_type")
         desired = ng.get("desired_capacity")
         min_c = ng.get("min_capacity")
         max_c = ng.get("max_capacity")
-        if desired is None or min_c is None or max_c is None:
-            raise Exception(f"node_groups[{i}] must include desired_capacity, min_capacity, max_capacity")
-        arch = ng.get("architecture") or "x86_64"
-        ami_family = ng.get("ami_family") or "al2"
-        labels = ng.get("labels") or {}
-        normalized.append({
+        if any(v is None for v in (desired, min_c, max_c)):
+            raise Exception(f"node_groups[{i}] must set desired_capacity,min_capacity,max_capacity")
+        if not (min_c <= desired <= max_c):
+            raise Exception(f"Capacity invalid for node_groups[{i}]")
+        taints_cfg = ng.get("taints") or []
+        taints_norm = []
+        for t_idx, t in enumerate(taints_cfg):
+            if "key" not in t or "effect" not in t:
+                raise Exception(f"node_groups[{i}].taints[{t_idx}] needs key/effect")
+            taints_norm.append({
+                "key": t["key"],
+                "value": t.get("value"),
+                "effect": t["effect"].upper(),
+            })
+        subnet_ids = ng.get("subnet_ids")
+        subnet_azs = ng.get("subnet_azs")
+        if subnet_ids and subnet_azs:
+            raise Exception(f"node_groups[{i}]: choose subnet_ids OR subnet_azs")
+        node_groups.append({
             "name": name,
-            "instance_type": instance_type,
+            "instance_type": itype,
             "desired_capacity": desired,
             "min_capacity": min_c,
             "max_capacity": max_c,
-            "architecture": arch,
-            "ami_family": ami_family,
+            "architecture": ng.get("architecture") or "x86_64",
+            "ami_family": ng.get("ami_family") or "al2",
             "ami_id": ng.get("ami_id"),
             "ssh_keypair_name": ng.get("ssh_keypair_name"),
-            "labels": labels,
+            "labels": ng.get("labels") or {},
+            "taints": taints_norm,
+            "subnet_ids": subnet_ids,
+            "subnet_azs": subnet_azs,
         })
-    node_groups = normalized
 
-    max_azs = cfg.get_int("max_azs")  # None => use all available
+    max_azs = cfg.get_int("max_azs")
     if max_azs is not None and max_azs <= 0:
-        raise Exception("max_azs must be > 0 when provided")
+        raise Exception("max_azs must be > 0")
 
     return {
         "environment": environment,
