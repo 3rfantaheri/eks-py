@@ -24,7 +24,12 @@ base_tags = build_base_tags(cfg)
 
 eks_role, node_group_role = create_eks_roles(cfg["cluster_name"], base_tags)
 
-vpc, igw, route_table, subnet_ids = create_vpc(cfg["cluster_name"], cfg["vpc_cidr"], base_tags)
+vpc, igw, route_table, subnet_ids = create_vpc(
+    cfg["cluster_name"],
+    cfg["vpc_cidr"],
+    base_tags,
+    cfg["max_azs"],  # new parameter for multi-AZ flexibility
+)
 node_group_sg, eks_sg = create_security_groups(vpc, cfg["trusted_cidrs"], cfg["cluster_name"], base_tags)
 
 kms_key = create_kms_key(cfg, base_tags)

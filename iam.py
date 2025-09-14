@@ -18,8 +18,11 @@ def create_eks_roles(cluster_name, base_tags):
         "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
         "arn:aws:iam::aws:policy/AmazonEKSServicePolicy",
     ]:
-        aws.iam.RolePolicyAttachment(f"{eks_role._name}-{policy.split('/')[-1]}",
-            role=eks_role.name, policy_arn=policy)
+        aws.iam.RolePolicyAttachment(
+            f"eks-cluster-role-{policy.split('/')[-1]}",
+            role=eks_role.name,
+            policy_arn=policy
+        )
 
     node_group_role = aws.iam.Role(
         "eksNodeGroupRole",
@@ -38,7 +41,10 @@ def create_eks_roles(cluster_name, base_tags):
         "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
         "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
     ]:
-        aws.iam.RolePolicyAttachment(f"{node_group_role._name}-{policy.split('/')[-1]}",
-            role=node_group_role.name, policy_arn=policy)
+        aws.iam.RolePolicyAttachment(
+            f"eks-nodegroup-role-{policy.split('/')[-1]}",
+            role=node_group_role.name,
+            policy_arn=policy
+        )
 
     return eks_role, node_group_role

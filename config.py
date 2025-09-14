@@ -54,6 +54,10 @@ def load_config():
         })
     node_groups = normalized
 
+    max_azs = cfg.get_int("max_azs")  # None => use all available
+    if max_azs is not None and max_azs <= 0:
+        raise Exception("max_azs must be > 0 when provided")
+
     return {
         "environment": environment,
         "owner": cfg.get("owner") or "team-platform",
@@ -86,4 +90,5 @@ def load_config():
         "oidc_thumbprint": cfg.get("oidc_thumbprint") or "9e99a48a9960b14926bb7f3b02e22da0ecd2e9d0",
         "addon_versions": cfg.get_object("addon_versions") or {"vpc-cni": None, "kube-proxy": None, "coredns": None},
         "node_groups": node_groups,
+        "max_azs": max_azs,
     }

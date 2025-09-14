@@ -3,7 +3,7 @@ import pulumi
 import pulumi_aws as aws
 
 
-def create_vpc(cluster_name, vpc_cidr, base_tags):
+def create_vpc(cluster_name, vpc_cidr, base_tags, max_azs=None):
     vpc = aws.ec2.Vpc(
         "eks-vpc",
         cidr_block=vpc_cidr,
@@ -29,22 +29,23 @@ def create_vpc(cluster_name, vpc_cidr, base_tags):
     )
 
     azs = aws.get_availability_zones()
-    max_azs = min(3, len(azs.names))
-    if max_azs < 3:
-        pulumi.log.warn(f"Only {max_azs} AZs available; creating {max_azs} subnets.")
-
-    # Derive subnets from provided VPC CIDR (instead of hard-coded 10.100.*)
+    # Use all AZs unless limited by config
+    total_azs = len(azs.names)
+    if max_azs is None or max_azs > total_azs:
+        max_azs = total_azs
+    if max_azs < 2:
+        pulumi.log.warn("Using fewer than 2 AZs reduces availability.")
+    # Derive subnets programmatically
     try:
         net = ipaddress.ip_network(vpc_cidr)
     except ValueError:
         raise Exception(f"Invalid vpc_cidr '{vpc_cidr}'")
 
-    # Target /24 if possible; else subdivide one level deeper than current
-    desired_prefix = 24
     if net.version != 4:
         raise Exception("Only IPv4 CIDRs are supported currently.")
+
+    desired_prefix = 24
     if net.prefixlen >= desired_prefix:
-        # Cannot split into /24; fallback to splitting one bit deeper if possible
         fallback_prefix = min(net.prefixlen + 1, 28)
         if fallback_prefix <= 32 and fallback_prefix > net.prefixlen:
             subnets_iter = list(net.subnets(new_prefix=fallback_prefix))
@@ -57,7 +58,7 @@ def create_vpc(cluster_name, vpc_cidr, base_tags):
         pulumi.log.warn(
             f"CIDR {vpc_cidr} does not yield {max_azs} distinct subnets at /24; using {len(subnets_iter)}."
         )
-        max_azs = min(max_azs, len(subnets_iter))
+        max_azs = len(subnets_iter)
 
     subnet_ids = []
     for i, az in enumerate(azs.names[:max_azs]):

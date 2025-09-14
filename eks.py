@@ -151,14 +151,15 @@ def create_node_group(name, cfg_ng, node_group_role, subnet_ids, lt, cluster, ba
     )
 
 def build_kubeconfig(cluster, cluster_name):
+    # Fix: properly access certificate_authority (Output[dict])
     return pulumi.Output.all(
         cluster.endpoint,
-        cluster.certificate_authority["data"],
+        cluster.certificate_authority,
         cluster_name
     ).apply(lambda args: json.dumps({
         "apiVersion": "v1",
         "clusters": [{
-            "cluster": {"server": args[0], "certificate-authority-data": args[1]},
+            "cluster": {"server": args[0], "certificate-authority-data": args[1]['data']},
             "name": args[2],
         }],
         "contexts": [{
@@ -173,16 +174,20 @@ def build_kubeconfig(cluster, cluster_name):
         }]
     }))
 
-def create_kube_provider(cluster, cluster_name):
-    return k8s.Provider("k8s-provider", kubeconfig=build_kubeconfig(cluster, cluster_name))
-
 def create_managed_addons(cfg, cluster, base_tags):
     if not cfg["enable_managed_addons"]:
         return
     for addon_name, ver in cfg["addon_versions"].items():
-        aws.eks.Addon(f"addon-{addon_name}",
-            cluster_name=cluster.name,
-            addon_name=addon_name,
-            addon_version=ver,
-            resolve_conflicts="OVERWRITE",
-            tags=base_tags)
+        kwargs = {
+            "cluster_name": cluster.name,
+            "addon_name": addon_name,
+            "resolve_conflicts": "OVERWRITE",
+            "tags": base_tags,
+        }
+        if ver:  # only include if not None
+            kwargs["addon_version"] = ver
+        aws.eks.Addon(
+            f"addon-{addon_name}",
+            **kwargs,
+            opts=ResourceOptions(depends_on=[cluster])
+        )
