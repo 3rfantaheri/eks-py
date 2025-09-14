@@ -4,10 +4,12 @@ import pulumi_kubernetes as k8s
 from pulumi import ResourceOptions
 
 def setup_oidc(cluster, thumbprint):
+    # Properly extract issuer via apply
+    issuer = cluster.identity.apply(lambda ident: ident["oidc"]["issuer"])
     return aws.iam.OpenIdConnectProvider("oidc-provider",
         client_id_list=["sts.amazonaws.com"],
         thumbprint_list=[thumbprint],
-        url=cluster.identity["oidc"]["issuer"],
+        url=issuer,
         opts=ResourceOptions(depends_on=[cluster])
     )
 

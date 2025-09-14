@@ -17,7 +17,7 @@ def build_base_tags(cfg):
     }
 
 def get_ami(cfg):
-    # If custom AMI provided use it
+    # If user supplied (from config) preserve
     if cfg["ami_id"]:
         return cfg["ami_id"]
 
@@ -31,15 +31,13 @@ def get_ami(cfg):
     filters = []
     owners = []
     if fam == "al2":
-        owners = ["602401143452"]  # EKS AL2
+        owners = ["602401143452"]  # EKS AL2 Optimized
         filters = [
             {"name": "name", "values": [f"amazon-eks-node-{version}-*"]},
             {"name": "architecture", "values": [arch]},
         ]
     elif fam == "bottlerocket":
-        # Bottlerocket owners (main AWS account)
         owners = ["679593333241"]
-        # Bottlerocket naming: bottlerocket-aws-k8s-<version>-<arch>-*
         arch_map = {"x86_64": "x86_64", "arm64": "aarch64"}
         filters = [
             {"name": "name", "values": [f"bottlerocket-aws-k8s-{version}-{arch_map[arch]}-*"]},
@@ -64,15 +62,38 @@ def create_kms_key(cfg, base_tags):
         name=f"alias/{cfg['cluster_name']}-secrets")
     return key
 
-def create_launch_template(node_group_sg, ssh_keypair_name, cluster_name, ami_id, base_tags, custom_ami_used):
-    # Add bootstrap script if using custom AMI or Bottlerocket not selected.
-    # Bottlerocket uses different bootstrap mechanism; for simplicity let EKS manage if not custom.
+def create_cluster_log_group(cfg, base_tags):
+    # Ensures retention is applied (EKS would create it automatically otherwise with no retention)
+    return aws.cloudwatch.LogGroup("eks-cluster-log-group",
+        name=f"/aws/eks/{cfg['cluster_name']}/cluster",
+        retention_in_days=cfg["log_retention_days"],
+        tags=base_tags
+    )
+
+def validate_instance_type_arch(cfg):
+    inst = cfg["instance_type"]
+    arch = cfg["node_architecture"]
+    # Simple heuristic: Graviton (arm64) types include 'g' after family (e.g., c7g, m6g, t4g) or 'a1'
+    is_arm_type = (".a1." in inst) or inst.split(".")[0].endswith("g")
+    if arch == "arm64" and not is_arm_type:
+        raise Exception(f"Instance type {inst} is not an ARM (Graviton/a1) type but node_architecture=arm64.")
+    if arch == "x86_64" and is_arm_type:
+        raise Exception(f"Instance type {inst} appears to be ARM (Graviton/a1) but node_architecture=x86_64.")
+    return True
+
+def create_launch_template(node_group_sg, ssh_keypair_name, cluster_name, ami_id, base_tags, ami_family, user_supplied_ami):
+    """
+    Only inject user_data (bootstrap) when user supplied a custom AL2-based AMI.
+    For official optimized AMIs (even if we resolved the ID) we omit user_data so EKS adds it automatically.
+    Never inject Linux bootstrap for Bottlerocket.
+    """
     user_data_encoded = None
-    if custom_ami_used:
+    if user_supplied_ami and ami_family == "al2":
         script = f"""#!/bin/bash
 /etc/eks/bootstrap.sh {cluster_name}
 """
         user_data_encoded = base64.b64encode(script.encode()).decode()
+
     kwargs = {
         "vpc_security_group_ids": [node_group_sg.id],
         "key_name": ssh_keypair_name if ssh_keypair_name else None,
@@ -88,7 +109,7 @@ def create_launch_template(node_group_sg, ssh_keypair_name, cluster_name, ami_id
         kwargs["image_id"] = ami_id
     return aws.ec2.LaunchTemplate("eks-nodegroup-lt", **kwargs)
 
-def create_eks_cluster(cfg, eks_role, eks_sg, subnet_ids, kms_key, base_tags):
+def create_eks_cluster(cfg, eks_role, eks_sg, subnet_ids, kms_key, base_tags, log_group):
     if not (cfg["public_access"] or cfg["private_access"]):
         raise Exception("At least one of public_access or private_access must be True.")
     encryption_config = None
@@ -97,6 +118,8 @@ def create_eks_cluster(cfg, eks_role, eks_sg, subnet_ids, kms_key, base_tags):
             provider=aws.eks.ClusterEncryptionConfigProviderArgs(key_arn=kms_key.arn),
             resources=["secrets"]
         )]
+    # Ensure log group created first
+    opts = ResourceOptions(depends_on=[log_group] if log_group else None)
     return aws.eks.Cluster("eks-cluster",
         name=cfg["cluster_name"],
         role_arn=eks_role.arn,
@@ -111,7 +134,8 @@ def create_eks_cluster(cfg, eks_role, eks_sg, subnet_ids, kms_key, base_tags):
             public_access_cidrs=cfg["public_access_cidrs"] if cfg["public_access"] else None
         ),
         deletion_protection=cfg["cluster_deletion_protection"],
-        tags={**base_tags, "Name": cfg["cluster_name"]}
+        tags={**base_tags, "Name": cfg["cluster_name"]},
+        opts=opts
     )
 
 def create_node_group(cfg, node_group_role, subnet_ids, lt, cluster, base_tags):
