@@ -18,7 +18,7 @@ Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, an
   - Prometheus / Grafana (kube-prometheus-stack) with override values
 
 
-## road map
+## Roadmap
 
 - Managed Add-ons
 - External Secrets Integration
