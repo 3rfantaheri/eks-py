@@ -2,7 +2,7 @@ import pulumi_aws as aws
 import pulumi_kubernetes as k8s
 from pulumi import ResourceOptions
 
-def setup_efs(cfg, vpc, node_group_sg, subnet_ids, cluster_name, kube_provider, node_group):
+def setup_efs(cfg, vpc, node_group_sg, subnet_ids, cluster_name, kube_provider, node_group, base_tags):
     efs_sg = aws.ec2.SecurityGroup(
         "efs-sg",
         vpc_id=vpc.id,
@@ -18,26 +18,24 @@ def setup_efs(cfg, vpc, node_group_sg, subnet_ids, cluster_name, kube_provider, 
         ],
         egress=[
             aws.ec2.SecurityGroupEgressArgs(
-                protocol="-1",
-                from_port=0,
-                to_port=0,
-                cidr_blocks=["0.0.0.0/0"],
+                protocol="-1", from_port=0, to_port=0, cidr_blocks=["0.0.0.0/0"],
             )
         ],
-        tags={"Name": f"{cluster_name}-efs-sg"},
+        tags={**base_tags, "Name": f"{cluster_name}-efs-sg"},
         opts=ResourceOptions(depends_on=[node_group_sg]),
     )
     fs = aws.efs.FileSystem("efs-fs",
         deletion_protection=cfg["efs_deletion_protection"],
-        tags={"Name": f"{cluster_name}-efs"}
+        tags={**base_tags, "Name": f"{cluster_name}-efs"}
     )
     for i, subnet_id in enumerate(subnet_ids):
-        aws.efs.MountTarget(f"efs-mount-{i}",
+        aws.efs.MountTarget(f"efs-mt-{i}",
             file_system_id=fs.id,
             subnet_id=subnet_id,
             security_groups=[efs_sg.id],
-            tags={"Name": f"{cluster_name}-efs-mt-{i}"}
+            tags={**base_tags, "Name": f"{cluster_name}-efs-mt-{i}"}
         )
+
     k8s.helm.v3.Chart("efs-csi-driver",
         k8s.helm.v3.ChartOpts(
             chart="aws-efs-csi-driver",
@@ -48,20 +46,20 @@ def setup_efs(cfg, vpc, node_group_sg, subnet_ids, cluster_name, kube_provider, 
         opts=ResourceOptions(provider=kube_provider, depends_on=[node_group])
     )
 
-def setup_ebs(cfg, kube_provider, node_group):
+def setup_ebs(cfg, kube_provider, node_group, base_tags):
     k8s.helm.v3.Chart("ebs-csi-driver",
         k8s.helm.v3.ChartOpts(
             chart="aws-ebs-csi-driver",
             version=cfg["ebs_csi_driver_version"],
             fetch_opts=k8s.helm.v3.FetchOpts(repo="https://kubernetes-sigs.github.io/aws-ebs-csi-driver"),
-            namespace="kube-system"
+            namespace="kube-system",
         ),
         opts=ResourceOptions(provider=kube_provider, depends_on=[node_group])
     )
 
-def setup_ingress(cfg, kube_provider, node_group):
+def setup_ingress(cfg, kube_provider, node_group, base_tags):
     k8s.core.v1.Namespace("ingress-nginx",
-        metadata={"name": "ingress-nginx"},
+        metadata={"name": "ingress-nginx", "labels": {"app": "ingress-nginx"}},
         opts=ResourceOptions(provider=kube_provider))
     k8s.helm.v3.Chart("ingress-nginx",
         k8s.helm.v3.ChartOpts(
@@ -74,7 +72,7 @@ def setup_ingress(cfg, kube_provider, node_group):
         opts=ResourceOptions(provider=kube_provider, depends_on=[node_group])
     )
 
-def setup_prometheus(cfg, kube_provider, node_group):
+def setup_prometheus(cfg, kube_provider, node_group, base_tags):
     k8s.core.v1.Namespace("monitoring",
         metadata={"name": "monitoring"},
         opts=ResourceOptions(provider=kube_provider))

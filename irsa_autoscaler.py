@@ -1,18 +1,18 @@
+import json
 import pulumi_aws as aws
 import pulumi_kubernetes as k8s
 from pulumi import ResourceOptions
-import json
 
-def setup_oidc(cluster):
+def setup_oidc(cluster, thumbprint):
     return aws.iam.OpenIdConnectProvider("oidc-provider",
         client_id_list=["sts.amazonaws.com"],
-        thumbprint_list=["9e99a48a9960b14926bb7f3b02e22da0ecd2e9d0"],
+        thumbprint_list=[thumbprint],
         url=cluster.identity["oidc"]["issuer"],
         opts=ResourceOptions(depends_on=[cluster])
     )
 
-def setup_autoscaler(cfg, oidc, kube_provider, node_group, cluster_name, region):
-    autoscaler_policy = aws.iam.Policy(
+def setup_autoscaler(cfg, oidc, kube_provider, node_group, cluster_name, region, base_tags):
+    policy = aws.iam.Policy(
         "cluster-autoscaler-policy",
         policy=json.dumps({
             "Version": "2012-10-17",
@@ -34,9 +34,10 @@ def setup_autoscaler(cfg, oidc, kube_provider, node_group, cluster_name, region)
                 ],
                 "Resource": "*"
             }]
-        })
+        }),
+        tags=base_tags
     )
-    autoscaler_role = aws.iam.Role(
+    role = aws.iam.Role(
         "cluster-autoscaler-role",
         assume_role_policy=oidc.url.apply(lambda url: json.dumps({
             "Version": "2012-10-17",
@@ -51,40 +52,46 @@ def setup_autoscaler(cfg, oidc, kube_provider, node_group, cluster_name, region)
                     }
                 }
             }]
-        }))
+        })),
+        tags=base_tags
     )
-    aws.iam.RolePolicyAttachment(
-        "cluster-autoscaler-attach-policy",
-        role=autoscaler_role.name,
-        policy_arn=autoscaler_policy.arn
-    )
+    aws.iam.RolePolicyAttachment("cluster-autoscaler-policy-attach",
+        role=role.name,
+        policy_arn=policy.arn)
+
+    arch = cfg["node_architecture"]
+    k8s_arch = "amd64" if arch == "x86_64" else "arm64"
+
     k8s.helm.v3.Chart(
         "cluster-autoscaler",
         k8s.helm.v3.ChartOpts(
             chart="cluster-autoscaler",
             version=cfg["autoscaler_chart_version"],
-            fetch_opts=k8s.helm.v3.FetchOpts(
-                repo="https://kubernetes.github.io/autoscaler"
-            ),
+            fetch_opts=k8s.helm.v3.FetchOpts(repo="https://kubernetes.github.io/autoscaler"),
             namespace="kube-system",
             values={
-                "autoDiscovery": {
-                    "clusterName": cluster_name,
-                },
+                "autoDiscovery": {"clusterName": cluster_name},
                 "awsRegion": region,
                 "rbac": {
                     "serviceAccount": {
                         "create": True,
                         "name": "cluster-autoscaler",
                         "annotations": {
-                            "eks.amazonaws.com/role-arn": autoscaler_role.arn
+                            "eks.amazonaws.com/role-arn": role.arn
                         }
                     }
                 },
                 "extraArgs": {
                     "skip-nodes-with-local-storage": "false",
                     "expander": "least-waste",
-                    "balance-similar-node-groups": "true"
+                    "balance-similar-node-groups": "true",
+                    "stderrthreshold": "info"
+                },
+                "podAnnotations": {
+                    "cluster-autoscaler.kubernetes.io/safe-to-evict": "false"
+                },
+                "nodeSelector": {
+                    "kubernetes.io/arch": k8s_arch
                 }
             },
         ),
