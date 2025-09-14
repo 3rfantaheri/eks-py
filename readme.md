@@ -1,4 +1,4 @@
-# eks-py: EKS IaC with Pulumi python runtime
+# eks-py: EKS IaC By Pulumi python
 
 Provision a production-ready AWS EKS cluster with optional EFS, EBS, Ingress, and Prometheus using Pulumi (Python).
 
